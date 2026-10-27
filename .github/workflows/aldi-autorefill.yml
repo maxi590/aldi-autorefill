@@ -1,0 +1,68 @@
+name: ALDI AutoRefill
+
+on:
+  schedule:
+    # Versetzte Zeiten vermeiden die besonders volle Minute zur vollen Stunde.
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aldi-autorefill
+  cancel-in-progress: false
+
+jobs:
+  check-and-refill:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.60.0-noble
+    timeout-minutes: 10
+    steps:
+      - name: Programm laden
+        uses: actions/checkout@v4
+
+      - name: Sperrzeit laden
+        uses: actions/cache@v4
+        with:
+          path: .state
+          key: aldi-attempt-${{ github.run_id }}
+          restore-keys: |
+            aldi-attempt-
+
+      - name: Abhaengigkeiten installieren
+        run: pip install --root-user-action ignore --requirement requirements.txt
+
+      - name: Sitzung vorbereiten
+        env:
+          ALDI_STORAGE_STATE_B64: ${{ secrets.ALDI_STORAGE_STATE_B64 }}
+          ALDI_THRESHOLD_MB: ${{ secrets.ALDI_THRESHOLD_MB }}
+        run: |
+          if [ -z "$ALDI_STORAGE_STATE_B64" ]; then
+            echo "Die verschluesselte ALDI-Sitzung fehlt."
+            exit 1
+          fi
+          case "$ALDI_THRESHOLD_MB" in
+            ''|*[!0-9]*)
+              echo "Die geschuetzte Schwelle fehlt oder ist ungueltig."
+              exit 1
+              ;;
+          esac
+          printf '%s' "$ALDI_STORAGE_STATE_B64" | base64 --decode > /tmp/aldi-session.json
+          chmod 600 /tmp/aldi-session.json
+
+      - name: Datenvolumen pruefen und bei Bedarf nachbuchen
+        env:
+          ALDI_THRESHOLD_MB: ${{ secrets.ALDI_THRESHOLD_MB }}
+        run: >-
+          python cloud_runner.py
+          --storage-state /tmp/aldi-session.json
+          --state-file .state/attempt.json
+          --threshold-mb "$ALDI_THRESHOLD_MB"
+          --cooldown-minutes 30
+          --execute
+
+      - name: Sitzung aus dem Arbeitsrechner entfernen
+        if: always()
+        run: rm -f /tmp/aldi-session.json

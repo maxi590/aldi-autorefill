@@ -1,0 +1,8 @@
+.aldi-session.json
+.aldi-session.b64
+.state/
+private/
+.pycache-local/
+__pycache__/
+*.pyc
+.pytest_cache/
