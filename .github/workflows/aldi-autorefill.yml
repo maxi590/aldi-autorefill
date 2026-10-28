@@ -2,8 +2,8 @@ name: ALDI AutoRefill
 
 on:
   schedule:
-    # Versetzte Zeiten vermeiden die besonders volle Minute zur vollen Stunde.
-    - cron: "7,22,37,52 * * * *"
+    # Mehrere versetzte Startversuche verringern ausgelassene GitHub-Zeitplaene.
+    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
   workflow_dispatch:
 
 permissions:
