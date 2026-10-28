@@ -1,9 +1,6 @@
 name: ALDI AutoRefill
 
 on:
-  schedule:
-    # Stuendliche Reserve, falls die selbstlaufende Kette unterbrochen wird.
-    - cron: "17 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -12,7 +9,7 @@ permissions:
 
 concurrency:
   group: aldi-autorefill
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   check-and-refill:

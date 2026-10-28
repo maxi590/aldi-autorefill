@@ -1,0 +1,64 @@
+name: ALDI AutoRefill Watchdog
+
+on:
+  schedule:
+    # Der Zeitplan ist nur eine Reserve und muss daher nicht minutengenau laufen.
+    - cron: "43 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  ensure-running:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Selbstlaufende Kette sicherstellen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          repository = os.environ["GH_REPOSITORY"]
+          headers = {
+              "Accept": "application/vnd.github+json",
+              "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+              "Content-Type": "application/json",
+              "User-Agent": "aldi-autorefill-watchdog",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+          runs_url = (
+              f"https://api.github.com/repos/{repository}/actions/workflows/"
+              "aldi-autorefill.yml/runs?per_page=20"
+          )
+          request = urllib.request.Request(runs_url, headers=headers)
+          with urllib.request.urlopen(request, timeout=30) as response:
+              runs = json.load(response).get("workflow_runs", [])
+
+          active_states = {"queued", "in_progress", "waiting", "pending", "requested"}
+          if any(run.get("status") in active_states for run in runs):
+              print("Die selbstlaufende Kette ist aktiv.")
+          else:
+              dispatch_url = (
+                  f"https://api.github.com/repos/{repository}/actions/workflows/"
+                  "aldi-autorefill.yml/dispatches"
+              )
+              request = urllib.request.Request(
+                  dispatch_url,
+                  data=json.dumps({"ref": "main"}).encode("utf-8"),
+                  method="POST",
+                  headers=headers,
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  if response.status != 204:
+                      raise RuntimeError(
+                          f"Unerwarteter GitHub-Status: {response.status}"
+                      )
+              print("Die selbstlaufende Kette wurde neu gestartet.")
+          PY
