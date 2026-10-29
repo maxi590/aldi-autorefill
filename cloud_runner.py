@@ -59,31 +59,59 @@ def save_attempt(path: Path, status: str, attempted_at: datetime) -> None:
 
 
 def refill_target(page):
-    """Require exactly one visible and clickable control named '+1 GB'."""
+    """Find the visible domestic '+1 GB' control without exposing page text."""
     labels = page.get_by_text(REFILL_LABEL, exact=True)
     visible = []
     for index in range(min(labels.count(), 20)):
         label = labels.nth(index)
         if label.is_visible():
             visible.append(label)
-    if len(visible) != 1:
-        return None, "UNKNOWN"
 
-    label = visible[0]
-    semantic = label.locator(
-        "xpath=ancestor-or-self::button | ancestor-or-self::a | "
-        "ancestor-or-self::*[@role='button'] | "
-        "ancestor-or-self::input[@type='button'] | "
-        "ancestor-or-self::input[@type='submit']"
-    )
-    target = semantic.first if semantic.count() else label
-    if not target.is_visible() or not target.is_enabled():
-        return target, "DISABLED"
-    try:
-        target.click(trial=True, timeout=3000)
-    except Exception:
-        return target, "UNKNOWN"
-    return target, "ENABLED"
+    candidates = []
+    for label in visible:
+        semantic = label.locator(
+            "xpath=ancestor-or-self::*["
+            "self::button or self::a or @role='button' or "
+            "(self::input and (@type='button' or @type='submit'))"
+            "][1]"
+        )
+        target = semantic.first if semantic.count() else label
+        if not target.is_visible() or not target.is_enabled():
+            continue
+        try:
+            target.click(trial=True, timeout=3000)
+        except Exception:
+            continue
+
+        domestic_context = label.locator(
+            "xpath=ancestor::*["
+            "contains(translate(normalize-space(.), 'INLAND', 'inland'), 'inland')"
+            "][1]"
+        )
+        is_domestic = bool(domestic_context.count())
+        candidates.append((target, is_domestic))
+
+    domestic = [target for target, is_domestic in candidates if is_domestic]
+    if len(domestic) == 1:
+        return domestic[0], "ENABLED", len(visible), len(candidates)
+    if len(candidates) == 1:
+        return candidates[0][0], "ENABLED", len(visible), len(candidates)
+    if len(candidates) > 1:
+        return None, "AMBIGUOUS", len(visible), len(candidates)
+    if visible:
+        return None, "BLOCKED", len(visible), 0
+    return None, "MISSING", 0, 0
+
+
+def wait_for_refill_target(page, timeout_seconds: int = 25):
+    """Allow the refill control to load after the allowance reading appears."""
+    last = (None, "MISSING", 0, 0)
+    for _ in range(timeout_seconds):
+        last = refill_target(page)
+        if last[1] == "ENABLED":
+            return last
+        page.wait_for_timeout(1000)
+    return last
 
 
 def wait_for_increase(page, previous_mb: int, timeout_seconds: int = 30) -> int | None:
@@ -149,6 +177,11 @@ def run_live(
                 storage_state=str(storage_state),
                 accept_downloads=False,
                 locale="de-DE",
+                viewport={"width": 430, "height": 932},
+                screen={"width": 430, "height": 932},
+                device_scale_factor=1,
+                is_mobile=True,
+                has_touch=True,
             ),
         )
         try:
@@ -170,7 +203,14 @@ def run_live(
                 "STAGE_DATA_WAIT",
                 lambda: wait_for_reading(page),
             )
-            target, control_status = refill_target(page)
+            if reading.remaining_mb <= threshold_mb:
+                target, control_status, visible_labels, clickable_controls = (
+                    wait_for_refill_target(page)
+                )
+            else:
+                target, control_status, visible_labels, clickable_controls = (
+                    refill_target(page)
+                )
             action = decide_action(
                 reading.remaining_mb,
                 threshold_mb,
@@ -182,6 +222,9 @@ def run_live(
                 "status": action,
                 "booking_clicked": False,
                 "booking_confirmed": False,
+                "control_status": control_status,
+                "visible_refill_labels": visible_labels,
+                "clickable_refill_controls": clickable_controls,
             }
             if action != "BOOK":
                 return result
@@ -189,7 +232,7 @@ def run_live(
             if not is_portal_host(page.url):
                 raise RuntimeError("PORTAL_DOMAIN_UNERWARTET")
             fresh = parse_portal_text(page.locator("body").inner_text(timeout=15000))
-            target, control_status = refill_target(page)
+            target, control_status, _, _ = wait_for_refill_target(page, 10)
             if (
                 fresh.remaining_mb is None
                 or fresh.remaining_mb > threshold_mb

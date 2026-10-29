@@ -3,7 +3,7 @@ name: ALDI AutoRefill Watchdog
 on:
   schedule:
     # Der Zeitplan ist nur eine Reserve und muss daher nicht minutengenau laufen.
-    - cron: "43 * * * *"
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -23,6 +23,8 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import time
+          import urllib.error
           import urllib.request
 
           repository = os.environ["GH_REPOSITORY"]
@@ -55,10 +57,21 @@ jobs:
                   method="POST",
                   headers=headers,
               )
-              with urllib.request.urlopen(request, timeout=30) as response:
-                  if response.status != 204:
-                      raise RuntimeError(
-                          f"Unerwarteter GitHub-Status: {response.status}"
-                      )
+              for attempt in range(6):
+                  try:
+                      with urllib.request.urlopen(request, timeout=30) as response:
+                          if response.status != 204:
+                              raise RuntimeError(
+                                  f"Unerwarteter GitHub-Status: {response.status}"
+                              )
+                      break
+                  except (
+                      urllib.error.HTTPError,
+                      urllib.error.URLError,
+                      TimeoutError,
+                  ):
+                      if attempt == 5:
+                          raise RuntimeError("GitHub-Neustart nicht erreichbar")
+                      time.sleep(5 * (attempt + 1))
               print("Die selbstlaufende Kette wurde neu gestartet.")
           PY
