@@ -47,9 +47,9 @@ def decide_action(
 ) -> str:
     if remaining_mb is None:
         return "UNVERIFIED"
-    # ALDI makes the free refill available only *below* 1 GB.  At exactly
-    # 1 GB the control is intentionally absent.
-    if remaining_mb >= threshold_mb:
+    # A unique enabled refill control is authoritative when the numeric card
+    # lags behind ALDI's eligibility state.
+    if remaining_mb >= threshold_mb and control_status != "ENABLED":
         return "MONITORING"
     if control_status != "ENABLED":
         return "WAITING_FOR_REFILL_CONTROL"
@@ -113,6 +113,34 @@ def is_refill_label(text: str) -> bool:
     )
 
 
+def clickable_refill_ancestor(label, max_depth: int = 6):
+    """Find ALDI's click-card wrapper when it is not a semantic button."""
+    element = label.element_handle()
+    for _ in range(max_depth + 1):
+        if element is None:
+            break
+        clickish = element.evaluate(
+            """element => {
+                const tag = element.tagName.toLowerCase();
+                const role = (element.getAttribute('role') || '').toLowerCase();
+                const tabindex = element.getAttribute('tabindex');
+                const cursor = getComputedStyle(element).cursor;
+                return tag === 'button' || tag === 'a' || role === 'button' ||
+                    element.hasAttribute('onclick') || tabindex === '0' ||
+                    cursor === 'pointer';
+            }"""
+        )
+        if clickish and element.is_visible() and element.is_enabled():
+            try:
+                element.click(trial=True, timeout=3000)
+                return element
+            except Exception:
+                pass
+        parent = element.evaluate_handle("element => element.parentElement")
+        element = parent.as_element()
+    return None
+
+
 def refill_target(page):
     """Find one visible domestic 1 GB refill control without exposing page text."""
     labels = page.get_by_text(ONE_GB_LABEL, exact=False)
@@ -133,12 +161,8 @@ def refill_target(page):
             "(self::input and (@type='button' or @type='submit'))"
             "][1]"
         )
-        target = semantic.first if semantic.count() else label
-        if not target.is_visible() or not target.is_enabled():
-            continue
-        try:
-            target.click(trial=True, timeout=3000)
-        except Exception:
+        target = semantic.first if semantic.count() else clickable_refill_ancestor(label)
+        if target is None:
             continue
 
         domestic_context = label.locator(
@@ -296,7 +320,6 @@ def run_live(
             target, control_status, _, _ = wait_for_refill_target(page, 10)
             if (
                 fresh.remaining_mb is None
-                or fresh.remaining_mb >= threshold_mb
                 or target is None
                 or control_status != "ENABLED"
             ):

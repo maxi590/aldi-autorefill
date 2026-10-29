@@ -6,10 +6,13 @@ from cloud_runner import balance_band, decide_action, in_cooldown, is_refill_lab
 
 class CloudDecisionTests(unittest.TestCase):
     def test_above_threshold_only_monitors(self):
-        self.assertEqual(decide_action(751, 750, "ENABLED", True, False), "MONITORING")
+        self.assertEqual(decide_action(751, 750, "MISSING", True, False), "MONITORING")
 
     def test_exact_threshold_only_monitors(self):
-        self.assertEqual(decide_action(750, 750, "ENABLED", True, False), "MONITORING")
+        self.assertEqual(decide_action(750, 750, "MISSING", True, False), "MONITORING")
+
+    def test_enabled_refill_control_overrides_lagging_balance(self):
+        self.assertEqual(decide_action(751, 750, "ENABLED", True, False), "BOOK")
 
     def test_balance_band_does_not_expose_amount(self):
         self.assertEqual(balance_band(749, 750), "BELOW_THRESHOLD")
