@@ -1,12 +1,20 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from cloud_runner import decide_action, in_cooldown
+from cloud_runner import balance_band, decide_action, in_cooldown
 
 
 class CloudDecisionTests(unittest.TestCase):
     def test_above_threshold_only_monitors(self):
         self.assertEqual(decide_action(751, 750, "ENABLED", True, False), "MONITORING")
+
+    def test_exact_threshold_only_monitors(self):
+        self.assertEqual(decide_action(750, 750, "ENABLED", True, False), "MONITORING")
+
+    def test_balance_band_does_not_expose_amount(self):
+        self.assertEqual(balance_band(749, 750), "BELOW_THRESHOLD")
+        self.assertEqual(balance_band(750, 750), "AT_THRESHOLD")
+        self.assertEqual(balance_band(751, 750), "ABOVE_THRESHOLD")
 
     def test_missing_or_ambiguous_control_never_clicks(self):
         self.assertEqual(

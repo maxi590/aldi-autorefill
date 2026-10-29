@@ -11,6 +11,8 @@ from portal_reader import PORTAL_URL, is_portal_host, parse_portal_text
 
 
 REFILL_LABEL = re.compile(r"^\s*\+\s*1\s*GB\s*$", re.I)
+ONE_GB_LABEL = re.compile(r"\b1\s*GB\b", re.I)
+REFILL_WORD = re.compile(r"nachbuch|kostenlos|weiteres|zus[aä]tzlich", re.I)
 
 
 def utc_now() -> datetime:
@@ -39,7 +41,9 @@ def decide_action(
 ) -> str:
     if remaining_mb is None:
         return "UNVERIFIED"
-    if remaining_mb > threshold_mb:
+    # ALDI makes the free refill available only *below* 1 GB.  At exactly
+    # 1 GB the control is intentionally absent.
+    if remaining_mb >= threshold_mb:
         return "MONITORING"
     if control_status != "ENABLED":
         return "WAITING_FOR_REFILL_CONTROL"
@@ -58,13 +62,39 @@ def save_attempt(path: Path, status: str, attempted_at: datetime) -> None:
     temporary.replace(path)
 
 
+def balance_band(remaining_mb: int | None, threshold_mb: int) -> str:
+    """Return a privacy-safe threshold relation without logging the balance."""
+    if remaining_mb is None:
+        return "UNKNOWN"
+    if remaining_mb < threshold_mb:
+        return "BELOW_THRESHOLD"
+    if remaining_mb == threshold_mb:
+        return "AT_THRESHOLD"
+    return "ABOVE_THRESHOLD"
+
+
+def refill_page_signals(page) -> dict[str, bool]:
+    """Report only generic refill words, never account or allowance text."""
+    body = page.locator("body").inner_text(timeout=15000)
+    return {
+        "one_gb_text_present": bool(ONE_GB_LABEL.search(body)),
+        "plus_one_gb_text_present": bool(re.search(r"\+\s*1\s*GB", body, re.I)),
+        "refill_word_present": bool(REFILL_WORD.search(body)),
+    }
+
+
 def refill_target(page):
-    """Find the visible domestic '+1 GB' control without exposing page text."""
-    labels = page.get_by_text(REFILL_LABEL, exact=True)
+    """Find one visible domestic 1 GB refill control without exposing page text."""
+    labels = page.get_by_text(ONE_GB_LABEL, exact=False)
     visible = []
     for index in range(min(labels.count(), 20)):
         label = labels.nth(index)
-        if label.is_visible():
+        if not label.is_visible():
+            continue
+        text = re.sub(r"\s+", " ", label.inner_text(timeout=3000)).strip()
+        if REFILL_LABEL.fullmatch(text) or (
+            ONE_GB_LABEL.search(text) and REFILL_WORD.search(text)
+        ):
             visible.append(label)
 
     candidates = []
@@ -222,9 +252,11 @@ def run_live(
                 "status": action,
                 "booking_clicked": False,
                 "booking_confirmed": False,
+                "balance_band": balance_band(reading.remaining_mb, threshold_mb),
                 "control_status": control_status,
                 "visible_refill_labels": visible_labels,
                 "clickable_refill_controls": clickable_controls,
+                **refill_page_signals(page),
             }
             if action != "BOOK":
                 return result
@@ -235,7 +267,7 @@ def run_live(
             target, control_status, _, _ = wait_for_refill_target(page, 10)
             if (
                 fresh.remaining_mb is None
-                or fresh.remaining_mb > threshold_mb
+                or fresh.remaining_mb >= threshold_mb
                 or target is None
                 or control_status != "ENABLED"
             ):
