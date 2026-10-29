@@ -19,6 +19,10 @@ REFILL_LABEL = re.compile(r"^\s*\+\s*1\s*GB\s*$", re.I)
 BARE_REFILL_LABEL = re.compile(r"^\s*1\s*GB\s*$", re.I)
 ONE_GB_LABEL = re.compile(r"\b1\s*GB\b", re.I)
 REFILL_WORD = re.compile(r"nachbuch|kostenlos|weiteres|zus[aä]tzlich", re.I)
+ACTIVATE_WORD = re.compile(r"aktivier", re.I)
+CONFIRM_WORD = re.compile(r"best[aä]tig|zustimm", re.I)
+BOOK_WORD = re.compile(r"buch|nachbuch", re.I)
+CONTINUE_WORD = re.compile(r"weiter|fortfahr", re.I)
 
 
 def utc_now() -> datetime:
@@ -137,6 +141,44 @@ def refill_dom_diagnostics(page) -> dict[str, list[dict]]:
         )
         return {"refill_ancestor_chain": chain}
     return {"refill_ancestor_chain": []}
+
+
+def post_click_diagnostics(page) -> dict:
+    """Describe a possible confirmation layer using only generic signals."""
+    page.wait_for_timeout(1000)
+    counters = {
+        "visible_post_click_controls": 0,
+        "activate_controls": 0,
+        "confirm_controls": 0,
+        "book_controls": 0,
+        "continue_controls": 0,
+    }
+    controls = page.locator("button, one-button, [role='button']")
+    for index in range(min(controls.count(), 100)):
+        control = controls.nth(index)
+        if not control.is_visible() or not control.is_enabled():
+            continue
+        counters["visible_post_click_controls"] += 1
+        text = re.sub(r"\s+", " ", control.inner_text(timeout=3000)).strip()
+        counters["activate_controls"] += bool(ACTIVATE_WORD.search(text))
+        counters["confirm_controls"] += bool(CONFIRM_WORD.search(text))
+        counters["book_controls"] += bool(BOOK_WORD.search(text))
+        counters["continue_controls"] += bool(CONTINUE_WORD.search(text))
+
+    dialog_tags = page.locator("body").evaluate(
+        """body => Array.from(body.querySelectorAll('*'))
+            .filter(element => {
+                const style = getComputedStyle(element);
+                const tag = element.tagName.toLowerCase();
+                const role = (element.getAttribute('role') || '').toLowerCase();
+                const visible = style.display !== 'none' && style.visibility !== 'hidden';
+                return visible && (role === 'dialog' || /dialog|modal|overlay|sheet/.test(tag));
+            })
+            .map(element => element.tagName.toLowerCase())
+            .filter((value, index, values) => values.indexOf(value) === index)
+            .slice(0, 20)"""
+    )
+    return {**counters, "visible_dialog_tags": dialog_tags}
 
 
 def is_refill_label(text: str) -> bool:
@@ -370,6 +412,7 @@ def run_live(
             save_attempt(state_file, "REQUESTED", now)
             target.click(timeout=10000)
             result["booking_clicked"] = True
+            result.update(post_click_diagnostics(page))
             increased = wait_for_increase(page, fresh.remaining_mb)
             if increased is not None:
                 result["status"] = "CONFIRMED"
