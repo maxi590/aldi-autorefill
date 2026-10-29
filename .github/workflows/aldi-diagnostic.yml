@@ -1,0 +1,43 @@
+name: ALDI Refill Diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-refill-control:
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.60.0-noble
+    timeout-minutes: 5
+    steps:
+      - name: Programm laden
+        uses: actions/checkout@v4
+
+      - name: Abhaengigkeiten installieren
+        run: pip install --root-user-action ignore --requirement requirements.txt
+
+      - name: Sitzung vorbereiten
+        env:
+          ALDI_STORAGE_STATE_B64: ${{ secrets.ALDI_STORAGE_STATE_B64 }}
+        run: |
+          if [ -z "$ALDI_STORAGE_STATE_B64" ]; then
+            echo "Die verschluesselte ALDI-Sitzung fehlt."
+            exit 1
+          fi
+          printf '%s' "$ALDI_STORAGE_STATE_B64" | base64 --decode > /tmp/aldi-session.json
+          chmod 600 /tmp/aldi-session.json
+
+      - name: Nachbuchungs-Steuerelement nur untersuchen
+        run: >-
+          python cloud_runner.py
+          --storage-state /tmp/aldi-session.json
+          --state-file /tmp/aldi-diagnostic-state.json
+          --threshold-mb 1000
+          --cooldown-minutes 30
+
+      - name: Sitzung entfernen
+        if: always()
+        run: rm -f /tmp/aldi-session.json

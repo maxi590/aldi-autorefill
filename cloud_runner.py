@@ -103,6 +103,42 @@ def reading_band_counts(page, threshold_mb: int) -> dict[str, int]:
     }
 
 
+def refill_dom_diagnostics(page) -> dict[str, list[dict]]:
+    """Describe only generic DOM properties around the refill label."""
+    labels = page.get_by_text(ONE_GB_LABEL, exact=False)
+    for index in range(min(labels.count(), 20)):
+        label = labels.nth(index)
+        if not label.is_visible() or not is_refill_label(label.inner_text(timeout=3000)):
+            continue
+        chain = label.evaluate(
+            """element => {
+                const result = [];
+                let current = element;
+                for (let depth = 0; current && depth <= 8; depth += 1) {
+                    const style = getComputedStyle(current);
+                    const classes = String(current.className || '')
+                        .split(/\s+/)
+                        .filter(value => /^[A-Za-z0-9_-]{1,60}$/.test(value))
+                        .slice(0, 6);
+                    result.push({
+                        depth,
+                        tag: current.tagName.toLowerCase(),
+                        role: current.getAttribute('role') || '',
+                        cursor: style.cursor,
+                        pointer_events: style.pointerEvents,
+                        tabindex: current.getAttribute('tabindex') || '',
+                        has_onclick: current.hasAttribute('onclick'),
+                        classes,
+                    });
+                    current = current.parentElement;
+                }
+                return result;
+            }"""
+        )
+        return {"refill_ancestor_chain": chain}
+    return {"refill_ancestor_chain": []}
+
+
 def is_refill_label(text: str) -> bool:
     """Recognize the short labels ALDI uses for the free refill control."""
     normalized = re.sub(r"\s+", " ", text).strip()
@@ -132,7 +168,7 @@ def clickable_refill_ancestor(label, max_depth: int = 6):
         )
         if clickish and element.is_visible() and element.is_enabled():
             try:
-                element.click(trial=True, timeout=3000)
+                element.click(trial=True, timeout=500)
                 return element
             except Exception:
                 pass
@@ -185,7 +221,7 @@ def refill_target(page):
     return None, "MISSING", 0, 0
 
 
-def wait_for_refill_target(page, timeout_seconds: int = 25):
+def wait_for_refill_target(page, timeout_seconds: int = 8):
     """Allow the refill control to load after the allowance reading appears."""
     last = (None, "MISSING", 0, 0)
     for _ in range(timeout_seconds):
@@ -310,6 +346,7 @@ def run_live(
                 "clickable_refill_controls": clickable_controls,
                 **refill_page_signals(page),
                 **reading_band_counts(page, threshold_mb),
+                **refill_dom_diagnostics(page),
             }
             if action != "BOOK":
                 return result
@@ -317,7 +354,7 @@ def run_live(
             if not is_portal_host(page.url):
                 raise RuntimeError("PORTAL_DOMAIN_UNERWARTET")
             fresh = parse_portal_text(page.locator("body").inner_text(timeout=15000))
-            target, control_status, _, _ = wait_for_refill_target(page, 10)
+            target, control_status, _, _ = wait_for_refill_target(page, 5)
             if (
                 fresh.remaining_mb is None
                 or target is None
