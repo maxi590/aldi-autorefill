@@ -36,29 +36,20 @@ jobs:
       - name: Sitzung vorbereiten
         env:
           ALDI_STORAGE_STATE_B64: ${{ secrets.ALDI_STORAGE_STATE_B64 }}
-          ALDI_THRESHOLD_MB: ${{ secrets.ALDI_THRESHOLD_MB }}
         run: |
           if [ -z "$ALDI_STORAGE_STATE_B64" ]; then
             echo "Die verschluesselte ALDI-Sitzung fehlt."
             exit 1
           fi
-          case "$ALDI_THRESHOLD_MB" in
-            ''|*[!0-9]*)
-              echo "Die geschuetzte Schwelle fehlt oder ist ungueltig."
-              exit 1
-              ;;
-          esac
           printf '%s' "$ALDI_STORAGE_STATE_B64" | base64 --decode > /tmp/aldi-session.json
           chmod 600 /tmp/aldi-session.json
 
       - name: Datenvolumen pruefen und bei Bedarf nachbuchen
-        env:
-          ALDI_THRESHOLD_MB: ${{ secrets.ALDI_THRESHOLD_MB }}
         run: >-
           python cloud_runner.py
           --storage-state /tmp/aldi-session.json
           --state-file .state/attempt.json
-          --threshold-mb "$ALDI_THRESHOLD_MB"
+          --threshold-mb 1000
           --cooldown-minutes 30
           --execute
 

@@ -28,12 +28,12 @@ class Reading:
 AMOUNT = r"(\d{1,3}(?:[.,]\d{3})+|\d+(?:[.,]\d+)?)"
 PATTERN = re.compile(
     r"Noch\s+" + AMOUNT + r"\s*(GB|MB)\s+von\s+" + AMOUNT
-    + r"\s*(GB|MB)\s*(?:\+\s*1\s*GB\s*)?Inland\b",
+    + r"\s*(GB|MB)\s*(?:\+?\s*1\s*GB\s*)?Inland\b",
     re.I,
 )
 REFERENCE_PATTERN = re.compile(
     r"Noch\s+" + AMOUNT + r"\s*(GB|MB)\s+von\s+" + AMOUNT
-    + r"\s*(GB|MB)\s*(?:\+\s*1\s*GB\b)?",
+    + r"\s*(GB|MB)\s*(?:\+?\s*1\s*GB\b)?",
     re.I,
 )
 
@@ -50,16 +50,26 @@ def to_mb(raw: str, unit: str) -> int:
 
 
 def parse_portal_text(text: str) -> Reading:
+    readings = parse_portal_readings(text)
+    if readings:
+        # The responsive overview can render more than one domestic allowance
+        # card. The exhausted card is the one relevant for a free refill.
+        return min(readings, key=lambda reading: reading.remaining_mb or 0)
+    return Reading(None, "UNVERIFIED")
+
+
+def parse_portal_readings(text: str) -> list[Reading]:
+    """Return every valid domestic allowance rendered by the overview."""
     normalized = re.sub(r"\s+", " ", text.replace("\u00a0", " "))
-    match = PATTERN.search(normalized)
-    if not match:
-        if re.search(r"\bRoaming\b", normalized, re.I):
-            return Reading(None, "UNVERIFIED")
-        match = REFERENCE_PATTERN.search(normalized)
-    if not match:
-        return Reading(None, "UNVERIFIED")
-    remaining = to_mb(match.group(1), match.group(2))
-    allowance = to_mb(match.group(3), match.group(4))
-    if not 0 <= remaining <= allowance <= 1000000:
-        return Reading(None, "UNVERIFIED")
-    return Reading(remaining, "READ_ONLY")
+    matches = list(PATTERN.finditer(normalized))
+    if not matches and not re.search(r"\bRoaming\b", normalized, re.I):
+        reference = REFERENCE_PATTERN.search(normalized)
+        matches = [reference] if reference else []
+
+    readings = []
+    for match in matches:
+        remaining = to_mb(match.group(1), match.group(2))
+        allowance = to_mb(match.group(3), match.group(4))
+        if 0 <= remaining <= allowance <= 1000000:
+            readings.append(Reading(remaining, "READ_ONLY"))
+    return readings

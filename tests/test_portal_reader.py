@@ -26,6 +26,13 @@ class PortalReaderTests(unittest.TestCase):
             950,
         )
 
+    def test_chooses_lowest_visible_domestic_allowance(self):
+        text = (
+            "Noch 12 GB von 100 GB Inland "
+            "Noch 0,5 GB von 100 GB 1 GB Inland"
+        )
+        self.assertEqual(parse_portal_text(text).remaining_mb, 500)
+
 
 if __name__ == "__main__":
     unittest.main()

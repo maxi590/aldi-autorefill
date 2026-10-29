@@ -7,7 +7,12 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from portal_reader import PORTAL_URL, is_portal_host, parse_portal_text
+from portal_reader import (
+    PORTAL_URL,
+    is_portal_host,
+    parse_portal_readings,
+    parse_portal_text,
+)
 
 
 REFILL_LABEL = re.compile(r"^\s*\+\s*1\s*GB\s*$", re.I)
@@ -81,6 +86,20 @@ def refill_page_signals(page) -> dict[str, bool]:
         "one_gb_text_present": bool(ONE_GB_LABEL.search(body)),
         "plus_one_gb_text_present": bool(re.search(r"\+\s*1\s*GB", body, re.I)),
         "refill_word_present": bool(REFILL_WORD.search(body)),
+    }
+
+
+def reading_band_counts(page, threshold_mb: int) -> dict[str, int]:
+    """Count domestic cards by band without exposing allowance values."""
+    body = page.locator("body").inner_text(timeout=15000)
+    readings = parse_portal_readings(body)
+    return {
+        "domestic_reading_count": len(readings),
+        "below_threshold_readings": sum(
+            reading.remaining_mb is not None
+            and reading.remaining_mb < threshold_mb
+            for reading in readings
+        ),
     }
 
 
@@ -266,6 +285,7 @@ def run_live(
                 "visible_refill_labels": visible_labels,
                 "clickable_refill_controls": clickable_controls,
                 **refill_page_signals(page),
+                **reading_band_counts(page, threshold_mb),
             }
             if action != "BOOK":
                 return result
