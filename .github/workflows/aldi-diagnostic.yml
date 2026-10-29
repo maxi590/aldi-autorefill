@@ -2,6 +2,12 @@ name: ALDI Refill Diagnostic
 
 on:
   workflow_dispatch:
+    inputs:
+      execute:
+        description: Sofortige Nachbuchung ausfuehren
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -30,13 +36,14 @@ jobs:
           printf '%s' "$ALDI_STORAGE_STATE_B64" | base64 --decode > /tmp/aldi-session.json
           chmod 600 /tmp/aldi-session.json
 
-      - name: Nachbuchungs-Steuerelement nur untersuchen
+      - name: Nachbuchungs-Steuerelement untersuchen oder ausfuehren
         run: >-
           python cloud_runner.py
           --storage-state /tmp/aldi-session.json
           --state-file /tmp/aldi-diagnostic-state.json
           --threshold-mb 1000
           --cooldown-minutes 30
+          ${{ inputs.execute && '--execute' || '' }}
 
       - name: Sitzung entfernen
         if: always()

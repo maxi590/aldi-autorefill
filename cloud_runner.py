@@ -161,7 +161,8 @@ def clickable_refill_ancestor(label, max_depth: int = 6):
                 const role = (element.getAttribute('role') || '').toLowerCase();
                 const tabindex = element.getAttribute('tabindex');
                 const cursor = getComputedStyle(element).cursor;
-                return tag === 'button' || tag === 'a' || role === 'button' ||
+                return tag === 'button' || tag === 'a' || tag === 'one-button' ||
+                    role === 'button' ||
                     element.hasAttribute('onclick') || tabindex === '0' ||
                     cursor === 'pointer';
             }"""
