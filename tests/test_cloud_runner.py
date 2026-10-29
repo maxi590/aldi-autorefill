@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from cloud_runner import balance_band, decide_action, in_cooldown
+from cloud_runner import balance_band, decide_action, in_cooldown, is_refill_label
 
 
 class CloudDecisionTests(unittest.TestCase):
@@ -15,6 +15,12 @@ class CloudDecisionTests(unittest.TestCase):
         self.assertEqual(balance_band(749, 750), "BELOW_THRESHOLD")
         self.assertEqual(balance_band(750, 750), "AT_THRESHOLD")
         self.assertEqual(balance_band(751, 750), "ABOVE_THRESHOLD")
+
+    def test_current_bare_one_gb_label_is_recognized(self):
+        self.assertTrue(is_refill_label("1 GB"))
+        self.assertTrue(is_refill_label("+ 1 GB"))
+        self.assertTrue(is_refill_label("1 GB kostenlos nachbuchen"))
+        self.assertFalse(is_refill_label("Noch 1 GB von 100 GB"))
 
     def test_missing_or_ambiguous_control_never_clicks(self):
         self.assertEqual(

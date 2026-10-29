@@ -11,6 +11,7 @@ from portal_reader import PORTAL_URL, is_portal_host, parse_portal_text
 
 
 REFILL_LABEL = re.compile(r"^\s*\+\s*1\s*GB\s*$", re.I)
+BARE_REFILL_LABEL = re.compile(r"^\s*1\s*GB\s*$", re.I)
 ONE_GB_LABEL = re.compile(r"\b1\s*GB\b", re.I)
 REFILL_WORD = re.compile(r"nachbuch|kostenlos|weiteres|zus[aä]tzlich", re.I)
 
@@ -83,6 +84,16 @@ def refill_page_signals(page) -> dict[str, bool]:
     }
 
 
+def is_refill_label(text: str) -> bool:
+    """Recognize the short labels ALDI uses for the free refill control."""
+    normalized = re.sub(r"\s+", " ", text).strip()
+    return bool(
+        REFILL_LABEL.fullmatch(normalized)
+        or BARE_REFILL_LABEL.fullmatch(normalized)
+        or (ONE_GB_LABEL.search(normalized) and REFILL_WORD.search(normalized))
+    )
+
+
 def refill_target(page):
     """Find one visible domestic 1 GB refill control without exposing page text."""
     labels = page.get_by_text(ONE_GB_LABEL, exact=False)
@@ -91,10 +102,8 @@ def refill_target(page):
         label = labels.nth(index)
         if not label.is_visible():
             continue
-        text = re.sub(r"\s+", " ", label.inner_text(timeout=3000)).strip()
-        if REFILL_LABEL.fullmatch(text) or (
-            ONE_GB_LABEL.search(text) and REFILL_WORD.search(text)
-        ):
+        text = label.inner_text(timeout=3000)
+        if is_refill_label(text):
             visible.append(label)
 
     candidates = []
