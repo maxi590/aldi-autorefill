@@ -351,8 +351,13 @@ def wait_for_refill_target(page, timeout_seconds: int = 8):
 
 
 def wait_for_increase(page, previous_mb: int, timeout_seconds: int = 30) -> int | None:
-    for _ in range(timeout_seconds):
+    for elapsed in range(timeout_seconds):
         page.wait_for_timeout(1000)
+        # ALDI applies the refill asynchronously and does not always update the
+        # already-open overview.  Refresh a few times before declaring the
+        # click unconfirmed.
+        if elapsed in {4, 14, 24}:
+            navigate_to_portal(page)
         reading = parse_portal_text(page.locator("body").inner_text(timeout=15000))
         if reading.remaining_mb is not None and reading.remaining_mb > previous_mb:
             return reading.remaining_mb
