@@ -227,9 +227,11 @@ def post_click_diagnostics(page) -> dict:
             modal.inner_text(timeout=3000)
         ):
             safe_modal_count += 1
+    body_text = page.locator("body").inner_text(timeout=15000)
     return {
         **counters,
         "safe_free_refill_modals": safe_modal_count,
+        "safe_free_refill_page": is_safe_free_refill_modal_text(body_text),
         "visible_dialog_tags": dialog_tags,
     }
 
@@ -263,11 +265,13 @@ def confirmation_target(page):
     """Find one explicit booking-confirmation control inside a visible modal."""
     modals = page.locator("one-modal, dialog, [role='dialog']")
     candidates = []
+    visible_modals = 0
     for modal_index in range(min(modals.count(), 10)):
         modal = modals.nth(modal_index)
-        if not modal.is_visible() or not is_safe_free_refill_modal_text(
-            modal.inner_text(timeout=3000)
-        ):
+        if not modal.is_visible():
+            continue
+        visible_modals += 1
+        if not is_safe_free_refill_modal_text(modal.inner_text(timeout=3000)):
             continue
         controls = modal.locator("button, one-button, [role='button']")
         for control_index in range(min(controls.count(), 30)):
@@ -277,7 +281,24 @@ def confirmation_target(page):
             text = control.inner_text(timeout=3000)
             if is_confirmation_action_text(text):
                 candidates.append(control)
-    return candidates[0] if len(candidates) == 1 else None
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # ALDI renders the modal shell and its slotted action button as siblings.
+    # Fall back only when the complete visible page still proves this is the
+    # free 1 GB flow and there is exactly one explicit confirmation action.
+    body_text = page.locator("body").inner_text(timeout=15000)
+    if visible_modals != 1 or not is_safe_free_refill_modal_text(body_text):
+        return None
+    global_candidates = []
+    controls = page.locator("button, one-button, [role='button']")
+    for index in range(min(controls.count(), 100)):
+        control = controls.nth(index)
+        if not control.is_visible() or not control.is_enabled():
+            continue
+        if is_confirmation_action_text(control.inner_text(timeout=3000)):
+            global_candidates.append(control)
+    return global_candidates[0] if len(global_candidates) == 1 else None
 
 
 def is_refill_label(text: str) -> bool:
