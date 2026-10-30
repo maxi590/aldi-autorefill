@@ -57,8 +57,13 @@ jobs:
         if: always()
         run: rm -f /tmp/aldi-session.json
 
+  schedule-next:
+    if: always()
+    needs: check-and-refill
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
       - name: Naechste Pruefung anfordern
-        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
