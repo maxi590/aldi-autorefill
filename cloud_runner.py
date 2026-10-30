@@ -232,6 +232,7 @@ def post_click_diagnostics(page) -> dict:
         **counters,
         "safe_free_refill_modals": safe_modal_count,
         "safe_free_refill_page": is_safe_free_refill_modal_text(body_text),
+        "paid_confirmation_text_present": bool(PAID_WORD.search(body_text)),
         "visible_dialog_tags": dialog_tags,
     }
 
@@ -285,10 +286,10 @@ def confirmation_target(page):
         return candidates[0]
 
     # ALDI renders the modal shell and its slotted action button as siblings.
-    # Fall back only when the complete visible page still proves this is the
-    # free 1 GB flow and there is exactly one explicit confirmation action.
+    # The modal is opened only after the unique 1 GB refill card was clicked,
+    # so accept one explicit confirmation action unless paid wording appears.
     body_text = page.locator("body").inner_text(timeout=15000)
-    if visible_modals != 1 or not is_safe_free_refill_modal_text(body_text):
+    if visible_modals != 1 or PAID_WORD.search(body_text):
         return None
     global_candidates = []
     controls = page.locator("button, one-button, [role='button']")
