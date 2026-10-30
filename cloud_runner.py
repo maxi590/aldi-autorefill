@@ -54,7 +54,7 @@ def decide_action(
 ) -> str:
     if remaining_mb is None:
         return "UNVERIFIED"
-    # The free refill is only eligible below the official threshold.  A
+    # The free refill is only attempted below the configured threshold.  A
     # visible refill card alone must never override the measured allowance.
     if remaining_mb >= threshold_mb:
         return "MONITORING"

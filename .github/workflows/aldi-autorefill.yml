@@ -49,7 +49,7 @@ jobs:
           python cloud_runner.py
           --storage-state /tmp/aldi-session.json
           --state-file .state/attempt.json
-          --threshold-mb 1000
+          --threshold-mb 900
           --cooldown-minutes 30
           --execute
 

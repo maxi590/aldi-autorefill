@@ -41,7 +41,7 @@ jobs:
           python cloud_runner.py
           --storage-state /tmp/aldi-session.json
           --state-file /tmp/aldi-diagnostic-state.json
-          --threshold-mb 1000
+          --threshold-mb 900
           --cooldown-minutes 30
           ${{ inputs.execute && '--execute' || '' }}
 
