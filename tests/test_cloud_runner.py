@@ -1,7 +1,13 @@
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from cloud_runner import balance_band, decide_action, in_cooldown, is_refill_label
+from cloud_runner import (
+    balance_band,
+    decide_action,
+    in_cooldown,
+    is_refill_label,
+    is_safe_confirmation_text,
+)
 
 
 class CloudDecisionTests(unittest.TestCase):
@@ -11,8 +17,17 @@ class CloudDecisionTests(unittest.TestCase):
     def test_exact_threshold_only_monitors(self):
         self.assertEqual(decide_action(750, 750, "MISSING", True, False), "MONITORING")
 
-    def test_enabled_refill_control_overrides_lagging_balance(self):
-        self.assertEqual(decide_action(751, 750, "ENABLED", True, False), "BOOK")
+    def test_enabled_refill_control_never_overrides_balance(self):
+        self.assertEqual(
+            decide_action(751, 750, "ENABLED", True, False),
+            "MONITORING",
+        )
+
+    def test_exact_threshold_never_books_even_with_enabled_control(self):
+        self.assertEqual(
+            decide_action(750, 750, "ENABLED", True, False),
+            "MONITORING",
+        )
 
     def test_balance_band_does_not_expose_amount(self):
         self.assertEqual(balance_band(749, 750), "BELOW_THRESHOLD")
@@ -41,6 +56,12 @@ class CloudDecisionTests(unittest.TestCase):
         now = datetime(2026, 10, 27, 10, 0, tzinfo=timezone.utc)
         self.assertTrue(in_cooldown(now - timedelta(minutes=10), now, 30))
         self.assertEqual(decide_action(600, 750, "ENABLED", True, True), "COOLDOWN")
+
+    def test_confirmation_requires_booking_and_confirmation_words(self):
+        self.assertTrue(is_safe_confirmation_text("Buchung bestätigen"))
+        self.assertFalse(is_safe_confirmation_text("Bestätigen"))
+        self.assertFalse(is_safe_confirmation_text("Jetzt buchen"))
+        self.assertFalse(is_safe_confirmation_text("Weiter"))
 
 
 if __name__ == "__main__":

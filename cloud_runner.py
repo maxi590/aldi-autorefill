@@ -51,9 +51,9 @@ def decide_action(
 ) -> str:
     if remaining_mb is None:
         return "UNVERIFIED"
-    # A unique enabled refill control is authoritative when the numeric card
-    # lags behind ALDI's eligibility state.
-    if remaining_mb >= threshold_mb and control_status != "ENABLED":
+    # The free refill is only eligible below the official threshold.  A
+    # visible refill card alone must never override the measured allowance.
+    if remaining_mb >= threshold_mb:
         return "MONITORING"
     if control_status != "ENABLED":
         return "WAITING_FOR_REFILL_CONTROL"
@@ -152,6 +152,8 @@ def post_click_diagnostics(page) -> dict:
         "confirm_controls": 0,
         "book_controls": 0,
         "continue_controls": 0,
+        "confirm_book_controls": 0,
+        "modal_confirm_book_controls": 0,
     }
     controls = page.locator("button, one-button, [role='button']")
     for index in range(min(controls.count(), 100)):
@@ -164,6 +166,13 @@ def post_click_diagnostics(page) -> dict:
         counters["confirm_controls"] += bool(CONFIRM_WORD.search(text))
         counters["book_controls"] += bool(BOOK_WORD.search(text))
         counters["continue_controls"] += bool(CONTINUE_WORD.search(text))
+        safe_confirmation = is_safe_confirmation_text(text)
+        counters["confirm_book_controls"] += safe_confirmation
+        counters["modal_confirm_book_controls"] += safe_confirmation and bool(
+            control.locator(
+                "xpath=ancestor::*[self::one-modal or self::dialog or @role='dialog'][1]"
+            ).count()
+        )
 
     dialog_tags = page.locator("body").evaluate(
         """body => Array.from(body.querySelectorAll('*'))
@@ -179,6 +188,31 @@ def post_click_diagnostics(page) -> dict:
             .slice(0, 20)"""
     )
     return {**counters, "visible_dialog_tags": dialog_tags}
+
+
+def is_safe_confirmation_text(text: str) -> bool:
+    """Accept only an explicit booking confirmation, never a generic action."""
+    normalized = re.sub(r"\s+", " ", text).strip()
+    return bool(CONFIRM_WORD.search(normalized) and BOOK_WORD.search(normalized))
+
+
+def confirmation_target(page):
+    """Find one explicit booking-confirmation control inside a visible modal."""
+    modals = page.locator("one-modal, dialog, [role='dialog']")
+    candidates = []
+    for modal_index in range(min(modals.count(), 10)):
+        modal = modals.nth(modal_index)
+        if not modal.is_visible():
+            continue
+        controls = modal.locator("button, one-button, [role='button']")
+        for control_index in range(min(controls.count(), 30)):
+            control = controls.nth(control_index)
+            if not control.is_visible() or not control.is_enabled():
+                continue
+            text = control.inner_text(timeout=3000)
+            if is_safe_confirmation_text(text):
+                candidates.append(control)
+    return candidates[0] if len(candidates) == 1 else None
 
 
 def is_refill_label(text: str) -> bool:
@@ -364,7 +398,7 @@ def run_live(
                 "STAGE_DATA_WAIT",
                 lambda: wait_for_reading(page),
             )
-            if reading.remaining_mb <= threshold_mb:
+            if reading.remaining_mb < threshold_mb:
                 target, control_status, visible_labels, clickable_controls = (
                     wait_for_refill_target(page)
                 )
@@ -413,6 +447,11 @@ def run_live(
             target.click(timeout=10000)
             result["booking_clicked"] = True
             result.update(post_click_diagnostics(page))
+            confirmation = confirmation_target(page)
+            result["confirmation_clicked"] = False
+            if confirmation is not None and is_portal_host(page.url):
+                confirmation.click(timeout=10000)
+                result["confirmation_clicked"] = True
             increased = wait_for_increase(page, fresh.remaining_mb)
             if increased is not None:
                 result["status"] = "CONFIRMED"
