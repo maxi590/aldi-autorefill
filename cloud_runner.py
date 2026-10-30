@@ -41,8 +41,32 @@ def load_last_attempt(path: Path) -> datetime | None:
         return None
 
 
+def load_last_attempt_status(path: Path) -> str | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        status = payload.get("status")
+        return status if isinstance(status, str) else None
+    except (FileNotFoundError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
 def in_cooldown(last_attempt: datetime | None, now: datetime, minutes: int) -> bool:
     return bool(last_attempt and now - last_attempt < timedelta(minutes=minutes))
+
+
+def is_delayed_confirmation(
+    remaining_mb: int | None,
+    threshold_mb: int,
+    last_status: str | None,
+    cooling_down: bool,
+) -> bool:
+    """Confirm an asynchronous refill on the next privacy-safe reading."""
+    return bool(
+        remaining_mb is not None
+        and remaining_mb >= threshold_mb
+        and last_status == "CLICKED_UNCONFIRMED"
+        and cooling_down
+    )
 
 
 def decide_action(
@@ -452,12 +476,15 @@ def run_live(
                 target, control_status, visible_labels, clickable_controls = (
                     refill_target(page)
                 )
+            last_attempt = load_last_attempt(state_file)
+            last_status = load_last_attempt_status(state_file)
+            cooling_down = in_cooldown(last_attempt, now, cooldown_minutes)
             action = decide_action(
                 reading.remaining_mb,
                 threshold_mb,
                 control_status,
                 execute,
-                in_cooldown(load_last_attempt(state_file), now, cooldown_minutes),
+                cooling_down,
             )
             result = {
                 "status": action,
@@ -471,6 +498,16 @@ def run_live(
                 **reading_band_counts(page, threshold_mb),
                 **refill_dom_diagnostics(page),
             }
+            if is_delayed_confirmation(
+                reading.remaining_mb,
+                threshold_mb,
+                last_status,
+                cooling_down,
+            ):
+                result["status"] = "CONFIRMED_DELAYED"
+                result["booking_confirmed"] = True
+                save_attempt(state_file, "CONFIRMED", now)
+                return result
             if action != "BOOK":
                 return result
 

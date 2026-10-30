@@ -6,6 +6,7 @@ from cloud_runner import (
     decide_action,
     in_cooldown,
     is_confirmation_action_text,
+    is_delayed_confirmation,
     is_refill_label,
     is_safe_free_refill_modal_text,
     is_safe_confirmation_text,
@@ -79,6 +80,18 @@ class CloudDecisionTests(unittest.TestCase):
         self.assertTrue(is_confirmation_action_text("Jetzt aktivieren"))
         self.assertFalse(is_confirmation_action_text("Abbrechen"))
         self.assertFalse(is_confirmation_action_text("Weiter"))
+
+    def test_delayed_confirmation_requires_recent_unconfirmed_click(self):
+        self.assertTrue(
+            is_delayed_confirmation(900, 900, "CLICKED_UNCONFIRMED", True)
+        )
+        self.assertFalse(
+            is_delayed_confirmation(899, 900, "CLICKED_UNCONFIRMED", True)
+        )
+        self.assertFalse(is_delayed_confirmation(900, 900, "CONFIRMED", True))
+        self.assertFalse(
+            is_delayed_confirmation(900, 900, "CLICKED_UNCONFIRMED", False)
+        )
 
 
 if __name__ == "__main__":
