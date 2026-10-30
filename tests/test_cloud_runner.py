@@ -5,7 +5,9 @@ from cloud_runner import (
     balance_band,
     decide_action,
     in_cooldown,
+    is_confirmation_action_text,
     is_refill_label,
+    is_safe_free_refill_modal_text,
     is_safe_confirmation_text,
 )
 
@@ -62,6 +64,21 @@ class CloudDecisionTests(unittest.TestCase):
         self.assertFalse(is_safe_confirmation_text("Bestätigen"))
         self.assertFalse(is_safe_confirmation_text("Jetzt buchen"))
         self.assertFalse(is_safe_confirmation_text("Weiter"))
+
+    def test_free_refill_modal_requires_free_one_gb_offer(self):
+        self.assertTrue(
+            is_safe_free_refill_modal_text("1 GB kostenlos aktivieren")
+        )
+        self.assertFalse(is_safe_free_refill_modal_text("1 GB bestätigen"))
+        self.assertFalse(
+            is_safe_free_refill_modal_text("1 GB kostenpflichtig buchen")
+        )
+
+    def test_confirmation_action_excludes_cancel_controls(self):
+        self.assertTrue(is_confirmation_action_text("Bestätigen"))
+        self.assertTrue(is_confirmation_action_text("Jetzt aktivieren"))
+        self.assertFalse(is_confirmation_action_text("Abbrechen"))
+        self.assertFalse(is_confirmation_action_text("Weiter"))
 
 
 if __name__ == "__main__":

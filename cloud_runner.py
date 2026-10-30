@@ -23,6 +23,9 @@ ACTIVATE_WORD = re.compile(r"aktivier", re.I)
 CONFIRM_WORD = re.compile(r"best[aä]tig|zustimm", re.I)
 BOOK_WORD = re.compile(r"buch|nachbuch", re.I)
 CONTINUE_WORD = re.compile(r"weiter|fortfahr", re.I)
+FREE_WORD = re.compile(r"kostenlos", re.I)
+PAID_WORD = re.compile(r"kostenpflicht", re.I)
+CANCEL_WORD = re.compile(r"abbrech|zur[uü]ck|schlie", re.I)
 
 
 def utc_now() -> datetime:
@@ -154,6 +157,8 @@ def post_click_diagnostics(page) -> dict:
         "continue_controls": 0,
         "confirm_book_controls": 0,
         "modal_confirm_book_controls": 0,
+        "modal_confirm_controls": 0,
+        "modal_book_controls": 0,
     }
     controls = page.locator("button, one-button, [role='button']")
     for index in range(min(controls.count(), 100)):
@@ -168,11 +173,14 @@ def post_click_diagnostics(page) -> dict:
         counters["continue_controls"] += bool(CONTINUE_WORD.search(text))
         safe_confirmation = is_safe_confirmation_text(text)
         counters["confirm_book_controls"] += safe_confirmation
-        counters["modal_confirm_book_controls"] += safe_confirmation and bool(
+        in_modal = bool(
             control.locator(
                 "xpath=ancestor::*[self::one-modal or self::dialog or @role='dialog'][1]"
             ).count()
         )
+        counters["modal_confirm_book_controls"] += safe_confirmation and in_modal
+        counters["modal_confirm_controls"] += bool(CONFIRM_WORD.search(text)) and in_modal
+        counters["modal_book_controls"] += bool(BOOK_WORD.search(text)) and in_modal
 
     dialog_tags = page.locator("body").evaluate(
         """body => Array.from(body.querySelectorAll('*'))
@@ -187,7 +195,19 @@ def post_click_diagnostics(page) -> dict:
             .filter((value, index, values) => values.indexOf(value) === index)
             .slice(0, 20)"""
     )
-    return {**counters, "visible_dialog_tags": dialog_tags}
+    safe_modal_count = 0
+    modals = page.locator("one-modal, dialog, [role='dialog']")
+    for index in range(min(modals.count(), 10)):
+        modal = modals.nth(index)
+        if modal.is_visible() and is_safe_free_refill_modal_text(
+            modal.inner_text(timeout=3000)
+        ):
+            safe_modal_count += 1
+    return {
+        **counters,
+        "safe_free_refill_modals": safe_modal_count,
+        "visible_dialog_tags": dialog_tags,
+    }
 
 
 def is_safe_confirmation_text(text: str) -> bool:
@@ -196,13 +216,34 @@ def is_safe_confirmation_text(text: str) -> bool:
     return bool(CONFIRM_WORD.search(normalized) and BOOK_WORD.search(normalized))
 
 
+def is_safe_free_refill_modal_text(text: str) -> bool:
+    """Require an explicit free 1 GB offer and reject paid wording."""
+    normalized = re.sub(r"\s+", " ", text).strip()
+    return bool(
+        ONE_GB_LABEL.search(normalized)
+        and FREE_WORD.search(normalized)
+        and not PAID_WORD.search(normalized)
+    )
+
+
+def is_confirmation_action_text(text: str) -> bool:
+    """Recognize confirmation actions while excluding cancel/back controls."""
+    normalized = re.sub(r"\s+", " ", text).strip()
+    return bool(
+        (CONFIRM_WORD.search(normalized) or ACTIVATE_WORD.search(normalized))
+        and not CANCEL_WORD.search(normalized)
+    )
+
+
 def confirmation_target(page):
     """Find one explicit booking-confirmation control inside a visible modal."""
     modals = page.locator("one-modal, dialog, [role='dialog']")
     candidates = []
     for modal_index in range(min(modals.count(), 10)):
         modal = modals.nth(modal_index)
-        if not modal.is_visible():
+        if not modal.is_visible() or not is_safe_free_refill_modal_text(
+            modal.inner_text(timeout=3000)
+        ):
             continue
         controls = modal.locator("button, one-button, [role='button']")
         for control_index in range(min(controls.count(), 30)):
@@ -210,7 +251,7 @@ def confirmation_target(page):
             if not control.is_visible() or not control.is_enabled():
                 continue
             text = control.inner_text(timeout=3000)
-            if is_safe_confirmation_text(text):
+            if is_confirmation_action_text(text):
                 candidates.append(control)
     return candidates[0] if len(candidates) == 1 else None
 
