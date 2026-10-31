@@ -179,6 +179,7 @@ def post_click_diagnostics(page) -> dict:
         "confirm_controls": 0,
         "book_controls": 0,
         "continue_controls": 0,
+        "confirmation_action_controls": 0,
         "confirm_book_controls": 0,
         "modal_confirm_book_controls": 0,
         "modal_confirm_controls": 0,
@@ -195,6 +196,7 @@ def post_click_diagnostics(page) -> dict:
         counters["confirm_controls"] += bool(CONFIRM_WORD.search(text))
         counters["book_controls"] += bool(BOOK_WORD.search(text))
         counters["continue_controls"] += bool(CONTINUE_WORD.search(text))
+        counters["confirmation_action_controls"] += is_confirmation_action_text(text)
         safe_confirmation = is_safe_confirmation_text(text)
         counters["confirm_book_controls"] += safe_confirmation
         in_modal = bool(
@@ -220,16 +222,18 @@ def post_click_diagnostics(page) -> dict:
             .slice(0, 20)"""
     )
     safe_modal_count = 0
+    visible_modal_count = 0
     modals = page.locator("one-modal, dialog, [role='dialog']")
     for index in range(min(modals.count(), 10)):
         modal = modals.nth(index)
-        if modal.is_visible() and is_safe_free_refill_modal_text(
-            modal.inner_text(timeout=3000)
-        ):
-            safe_modal_count += 1
+        if modal.is_visible():
+            visible_modal_count += 1
+            if is_safe_free_refill_modal_text(modal.inner_text(timeout=3000)):
+                safe_modal_count += 1
     body_text = page.locator("body").inner_text(timeout=15000)
     return {
         **counters,
+        "visible_modal_count": visible_modal_count,
         "safe_free_refill_modals": safe_modal_count,
         "safe_free_refill_page": is_safe_free_refill_modal_text(body_text),
         "paid_confirmation_text_present": bool(PAID_WORD.search(body_text)),
@@ -289,7 +293,7 @@ def confirmation_target(page):
     # The modal is opened only after the unique 1 GB refill card was clicked,
     # so accept one explicit confirmation action unless paid wording appears.
     body_text = page.locator("body").inner_text(timeout=15000)
-    if visible_modals != 1 or PAID_WORD.search(body_text):
+    if visible_modals < 1 or PAID_WORD.search(body_text):
         return None
     global_candidates = []
     controls = page.locator("button, one-button, [role='button']")
