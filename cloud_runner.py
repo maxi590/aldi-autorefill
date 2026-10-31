@@ -558,10 +558,19 @@ def run_live(
             result.update(post_click_diagnostics(page))
             confirmation = confirmation_target(page)
             result["confirmation_clicked"] = False
+            result["confirmation_click_error"] = False
             if confirmation is not None and is_portal_host(page.url):
-                confirmation.click(timeout=10000)
-                result["confirmation_clicked"] = True
-            increased = wait_for_increase(page, fresh.remaining_mb)
+                try:
+                    confirmation.click(force=True, timeout=10000)
+                    result["confirmation_clicked"] = True
+                except Exception:
+                    result["confirmation_click_error"] = True
+            result["verification_error"] = False
+            try:
+                increased = wait_for_increase(page, fresh.remaining_mb)
+            except Exception:
+                increased = None
+                result["verification_error"] = True
             if increased is not None:
                 result["status"] = "CONFIRMED"
                 result["booking_confirmed"] = True
