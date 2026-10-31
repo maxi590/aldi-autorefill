@@ -50,7 +50,7 @@ jobs:
           --storage-state /tmp/aldi-session.json
           --state-file .state/attempt.json
           --threshold-mb 900
-          --cooldown-minutes 30
+          --cooldown-minutes 10
           --execute
 
       - name: Sitzung aus dem Arbeitsrechner entfernen
