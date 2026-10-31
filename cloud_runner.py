@@ -26,6 +26,10 @@ CONTINUE_WORD = re.compile(r"weiter|fortfahr", re.I)
 FREE_WORD = re.compile(r"kostenlos", re.I)
 PAID_WORD = re.compile(r"kostenpflicht", re.I)
 CANCEL_WORD = re.compile(r"abbrech|zur[uü]ck|schlie", re.I)
+OTP_WORD = re.compile(
+    r"best[aä]tigungscode|sicherheitscode|einmalcode|sms[- ]?code|code eingeben",
+    re.I,
+)
 
 
 def utc_now() -> datetime:
@@ -64,7 +68,7 @@ def is_delayed_confirmation(
     return bool(
         remaining_mb is not None
         and remaining_mb >= threshold_mb
-        and last_status == "CLICKED_UNCONFIRMED"
+        and last_status in {"CLICKED_UNCONFIRMED", "OTP_REQUIRED"}
         and cooling_down
     )
 
@@ -306,6 +310,27 @@ def confirmation_target(page):
     return global_candidates[0] if len(global_candidates) == 1 else None
 
 
+def otp_challenge_signals(page) -> dict[str, bool | int]:
+    """Detect an SMS-code challenge without logging page text or input values."""
+    page.wait_for_timeout(1000)
+    body_text = page.locator("body").inner_text(timeout=15000)
+    inputs = page.locator("input")
+    one_time_code_inputs = 0
+    for index in range(min(inputs.count(), 20)):
+        field = inputs.nth(index)
+        if not field.is_visible():
+            continue
+        autocomplete = (field.get_attribute("autocomplete") or "").lower()
+        if autocomplete == "one-time-code":
+            one_time_code_inputs += 1
+    return {
+        "otp_challenge_present": bool(
+            OTP_WORD.search(body_text) or one_time_code_inputs
+        ),
+        "one_time_code_inputs": one_time_code_inputs,
+    }
+
+
 def is_refill_label(text: str) -> bool:
     """Recognize the short labels ALDI uses for the free refill control."""
     normalized = re.sub(r"\s+", " ", text).strip()
@@ -534,6 +559,13 @@ def run_live(
                 result["booking_confirmed"] = True
                 save_attempt(state_file, "CONFIRMED", now)
                 return result
+            if (
+                reading.remaining_mb < threshold_mb
+                and last_status == "OTP_REQUIRED"
+            ):
+                result["status"] = "USER_ACTION_REQUIRED"
+                result["otp_challenge_present"] = True
+                return result
             if action != "BOOK":
                 return result
 
@@ -565,6 +597,12 @@ def run_live(
                     result["confirmation_clicked"] = True
                 except Exception:
                     result["confirmation_click_error"] = True
+            if result["confirmation_clicked"]:
+                result.update(otp_challenge_signals(page))
+                if result["otp_challenge_present"]:
+                    result["status"] = "USER_ACTION_REQUIRED"
+                    save_attempt(state_file, "OTP_REQUIRED", now)
+                    return result
             result["verification_error"] = False
             try:
                 increased = wait_for_increase(page, fresh.remaining_mb)

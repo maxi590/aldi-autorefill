@@ -93,6 +93,10 @@ class CloudDecisionTests(unittest.TestCase):
             is_delayed_confirmation(900, 900, "CLICKED_UNCONFIRMED", False)
         )
 
+    def test_delayed_confirmation_accepts_recent_otp_challenge(self):
+        self.assertTrue(is_delayed_confirmation(900, 900, "OTP_REQUIRED", True))
+        self.assertFalse(is_delayed_confirmation(899, 900, "OTP_REQUIRED", True))
+
 
 if __name__ == "__main__":
     unittest.main()
