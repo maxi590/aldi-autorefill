@@ -97,6 +97,9 @@ class CloudDecisionTests(unittest.TestCase):
         self.assertTrue(is_delayed_confirmation(900, 900, "OTP_REQUIRED", True))
         self.assertFalse(is_delayed_confirmation(899, 900, "OTP_REQUIRED", True))
 
+    def test_otp_confirmation_clears_even_after_cooldown(self):
+        self.assertTrue(is_delayed_confirmation(900, 900, "OTP_REQUIRED", False))
+
 
 if __name__ == "__main__":
     unittest.main()

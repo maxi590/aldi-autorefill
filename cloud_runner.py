@@ -68,8 +68,10 @@ def is_delayed_confirmation(
     return bool(
         remaining_mb is not None
         and remaining_mb >= threshold_mb
-        and last_status in {"CLICKED_UNCONFIRMED", "OTP_REQUIRED"}
-        and cooling_down
+        and (
+            (last_status == "CLICKED_UNCONFIRMED" and cooling_down)
+            or last_status == "OTP_REQUIRED"
+        )
     )
 
 
@@ -562,6 +564,7 @@ def run_live(
             if (
                 reading.remaining_mb < threshold_mb
                 and last_status == "OTP_REQUIRED"
+                and cooling_down
             ):
                 result["status"] = "USER_ACTION_REQUIRED"
                 result["otp_challenge_present"] = True
