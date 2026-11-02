@@ -10,6 +10,7 @@ from cloud_runner import (
     is_refill_label,
     is_safe_free_refill_modal_text,
     is_safe_confirmation_text,
+    otp_retry_blocked,
 )
 
 
@@ -99,6 +100,15 @@ class CloudDecisionTests(unittest.TestCase):
 
     def test_otp_confirmation_clears_even_after_cooldown(self):
         self.assertTrue(is_delayed_confirmation(900, 900, "OTP_REQUIRED", False))
+
+    def test_locked_otp_state_blocks_repeated_sms_attempts(self):
+        self.assertTrue(otp_retry_blocked("OTP_REQUIRED_LOCKED"))
+        self.assertFalse(otp_retry_blocked("OTP_REQUIRED"))
+
+    def test_locked_otp_state_is_cleared_by_confirmation(self):
+        self.assertTrue(
+            is_delayed_confirmation(900, 900, "OTP_REQUIRED_LOCKED", False)
+        )
 
 
 if __name__ == "__main__":

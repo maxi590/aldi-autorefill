@@ -70,9 +70,14 @@ def is_delayed_confirmation(
         and remaining_mb >= threshold_mb
         and (
             (last_status == "CLICKED_UNCONFIRMED" and cooling_down)
-            or last_status == "OTP_REQUIRED"
+            or last_status in {"OTP_REQUIRED", "OTP_REQUIRED_LOCKED"}
         )
     )
+
+
+def otp_retry_blocked(last_status: str | None) -> bool:
+    """Keep a detected SMS challenge locked until a later reading confirms it."""
+    return last_status == "OTP_REQUIRED_LOCKED"
 
 
 def decide_action(
@@ -563,8 +568,7 @@ def run_live(
                 return result
             if (
                 reading.remaining_mb < threshold_mb
-                and last_status == "OTP_REQUIRED"
-                and cooling_down
+                and otp_retry_blocked(last_status)
             ):
                 result["status"] = "USER_ACTION_REQUIRED"
                 result["otp_challenge_present"] = True
@@ -604,7 +608,7 @@ def run_live(
                 result.update(otp_challenge_signals(page))
                 if result["otp_challenge_present"]:
                     result["status"] = "USER_ACTION_REQUIRED"
-                    save_attempt(state_file, "OTP_REQUIRED", now)
+                    save_attempt(state_file, "OTP_REQUIRED_LOCKED", now)
                     return result
             result["verification_error"] = False
             try:
