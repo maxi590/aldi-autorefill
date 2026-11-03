@@ -7,6 +7,7 @@ from cloud_runner import (
     in_cooldown,
     is_confirmation_action_text,
     is_delayed_confirmation,
+    is_external_change_after_otp,
     is_refill_label,
     is_safe_free_refill_modal_text,
     is_safe_confirmation_text,
@@ -94,22 +95,17 @@ class CloudDecisionTests(unittest.TestCase):
             is_delayed_confirmation(900, 900, "CLICKED_UNCONFIRMED", False)
         )
 
-    def test_delayed_confirmation_accepts_recent_otp_challenge(self):
-        self.assertTrue(is_delayed_confirmation(900, 900, "OTP_REQUIRED", True))
-        self.assertFalse(is_delayed_confirmation(899, 900, "OTP_REQUIRED", True))
-
-    def test_otp_confirmation_clears_even_after_cooldown(self):
-        self.assertTrue(is_delayed_confirmation(900, 900, "OTP_REQUIRED", False))
+    def test_otp_recovery_is_not_claimed_as_automatic_confirmation(self):
+        self.assertFalse(is_delayed_confirmation(900, 900, "OTP_REQUIRED", True))
+        self.assertTrue(is_external_change_after_otp(900, 900, "OTP_REQUIRED"))
+        self.assertTrue(
+            is_external_change_after_otp(900, 900, "OTP_REQUIRED_LOCKED")
+        )
+        self.assertFalse(is_external_change_after_otp(899, 900, "OTP_REQUIRED"))
 
     def test_locked_otp_state_blocks_repeated_sms_attempts(self):
         self.assertTrue(otp_retry_blocked("OTP_REQUIRED_LOCKED"))
         self.assertFalse(otp_retry_blocked("OTP_REQUIRED"))
-
-    def test_locked_otp_state_is_cleared_by_confirmation(self):
-        self.assertTrue(
-            is_delayed_confirmation(900, 900, "OTP_REQUIRED_LOCKED", False)
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

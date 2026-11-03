@@ -68,10 +68,21 @@ def is_delayed_confirmation(
     return bool(
         remaining_mb is not None
         and remaining_mb >= threshold_mb
-        and (
-            (last_status == "CLICKED_UNCONFIRMED" and cooling_down)
-            or last_status in {"OTP_REQUIRED", "OTP_REQUIRED_LOCKED"}
-        )
+        and last_status == "CLICKED_UNCONFIRMED"
+        and cooling_down
+    )
+
+
+def is_external_change_after_otp(
+    remaining_mb: int | None,
+    threshold_mb: int,
+    last_status: str | None,
+) -> bool:
+    """Recognize recovery after OTP without claiming an automated booking."""
+    return bool(
+        remaining_mb is not None
+        and remaining_mb >= threshold_mb
+        and last_status in {"OTP_REQUIRED", "OTP_REQUIRED_LOCKED"}
     )
 
 
@@ -556,6 +567,14 @@ def run_live(
                 **reading_band_counts(page, threshold_mb),
                 **refill_dom_diagnostics(page),
             }
+            if is_external_change_after_otp(
+                reading.remaining_mb,
+                threshold_mb,
+                last_status,
+            ):
+                result["status"] = "EXTERNAL_CHANGE_AFTER_OTP"
+                save_attempt(state_file, "CONFIRMED", now)
+                return result
             if is_delayed_confirmation(
                 reading.remaining_mb,
                 threshold_mb,
