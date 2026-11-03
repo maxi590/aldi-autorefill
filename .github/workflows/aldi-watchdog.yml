@@ -1,9 +1,6 @@
 name: ALDI AutoRefill Watchdog
 
 on:
-  schedule:
-    # Der Zeitplan ist nur eine Reserve und muss daher nicht minutengenau laufen.
-    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
 
 permissions:
